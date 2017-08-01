@@ -47,6 +47,8 @@ public class NodeConfig {
 
   private final String collectionsAdminHandlerClass;
 
+  private final String healthCheckHandlerClass;
+
   private final String infoHandlerClass;
 
   private final String configSetsHandlerClass;
@@ -76,7 +78,7 @@ public class NodeConfig {
   private NodeConfig(String nodeName, Path coreRootDirectory, Path solrDataHome, Path configSetBaseDirectory, String sharedLibDirectory,
                      PluginInfo shardHandlerFactoryConfig, UpdateShardHandlerConfig updateShardHandlerConfig,
                      String coreAdminHandlerClass, String collectionsAdminHandlerClass,
-                     String infoHandlerClass, String configSetsHandlerClass,
+                     String healthCheckHandlerClass, String infoHandlerClass, String configSetsHandlerClass,
                      LogWatcherConfig logWatcherConfig, CloudConfig cloudConfig, Integer coreLoadThreads, int replayUpdatesThreads,
                      int transientCacheSize, boolean useSchemaCache, String managementPath, SolrResourceLoader loader,
                      Properties solrProperties, PluginInfo[] backupRepositoryPlugins,
@@ -90,6 +92,7 @@ public class NodeConfig {
     this.updateShardHandlerConfig = updateShardHandlerConfig;
     this.coreAdminHandlerClass = coreAdminHandlerClass;
     this.collectionsAdminHandlerClass = collectionsAdminHandlerClass;
+    this.healthCheckHandlerClass = healthCheckHandlerClass;
     this.infoHandlerClass = infoHandlerClass;
     this.configSetsHandlerClass = configSetsHandlerClass;
     this.logWatcherConfig = logWatcherConfig;
@@ -151,6 +154,10 @@ public class NodeConfig {
   
   public String getCollectionsHandlerClass() {
     return collectionsAdminHandlerClass;
+  }
+
+  public String getHealthCheckHandlerClass() {
+    return healthCheckHandlerClass;
   }
 
   public String getInfoHandlerClass() {
@@ -216,6 +223,7 @@ public class NodeConfig {
     private UpdateShardHandlerConfig updateShardHandlerConfig = UpdateShardHandlerConfig.DEFAULT;
     private String coreAdminHandlerClass = DEFAULT_ADMINHANDLERCLASS;
     private String collectionsAdminHandlerClass = DEFAULT_COLLECTIONSHANDLERCLASS;
+    private String healthCheckHandlerClass = DEFAULT_HEALTHCHECKHANDLERCLASS;
     private String infoHandlerClass = DEFAULT_INFOHANDLERCLASS;
     private String configSetsHandlerClass = DEFAULT_CONFIGSETSHANDLERCLASS;
     private LogWatcherConfig logWatcherConfig = new LogWatcherConfig(true, null, null, 50);
@@ -244,6 +252,7 @@ public class NodeConfig {
     private static final String DEFAULT_ADMINHANDLERCLASS = "org.apache.solr.handler.admin.CoreAdminHandler";
     private static final String DEFAULT_INFOHANDLERCLASS = "org.apache.solr.handler.admin.InfoHandler";
     private static final String DEFAULT_COLLECTIONSHANDLERCLASS = "org.apache.solr.handler.admin.CollectionsHandler";
+    private static final String DEFAULT_HEALTHCHECKHANDLERCLASS = "org.apache.solr.handler.admin.HealthCheckHandler";
     private static final String DEFAULT_CONFIGSETSHANDLERCLASS = "org.apache.solr.handler.admin.ConfigSetsHandler";
 
     public static final Set<String> DEFAULT_HIDDEN_SYS_PROPS = new HashSet<>(Arrays.asList(
@@ -307,6 +316,11 @@ public class NodeConfig {
 
     public NodeConfigBuilder setCollectionsAdminHandlerClass(String collectionsAdminHandlerClass) {
       this.collectionsAdminHandlerClass = collectionsAdminHandlerClass;
+      return this;
+    }
+
+    public NodeConfigBuilder setHealthCheckHandlerClass(String healthCheckHandlerClass) {
+      this.healthCheckHandlerClass = healthCheckHandlerClass;
       return this;
     }
 
@@ -379,7 +393,7 @@ public class NodeConfig {
 
     public NodeConfig build() {
       return new NodeConfig(nodeName, coreRootDirectory, solrDataHome, configSetBaseDirectory, sharedLibDirectory, shardHandlerFactoryConfig,
-                            updateShardHandlerConfig, coreAdminHandlerClass, collectionsAdminHandlerClass, infoHandlerClass, configSetsHandlerClass,
+                            updateShardHandlerConfig, coreAdminHandlerClass, collectionsAdminHandlerClass, healthCheckHandlerClass, infoHandlerClass, configSetsHandlerClass,
                             logWatcherConfig, cloudConfig, coreLoadThreads, replayUpdatesThreads, transientCacheSize, useSchemaCache, managementPath, loader, solrProperties,
                             backupRepositoryPlugins, metricsConfig, transientCacheConfig);
     }

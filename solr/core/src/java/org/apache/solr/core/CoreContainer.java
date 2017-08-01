@@ -16,6 +16,18 @@
  */
 package org.apache.solr.core;
 
+import static java.util.Objects.requireNonNull;
+import static org.apache.solr.common.params.CommonParams.AUTHC_PATH;
+import static org.apache.solr.common.params.CommonParams.AUTHZ_PATH;
+import static org.apache.solr.common.params.CommonParams.COLLECTIONS_HANDLER_PATH;
+import static org.apache.solr.common.params.CommonParams.CONFIGSETS_HANDLER_PATH;
+import static org.apache.solr.common.params.CommonParams.CORES_HANDLER_PATH;
+import static org.apache.solr.common.params.CommonParams.HEALTH_CHECK_HANDLER_PATH;
+import static org.apache.solr.common.params.CommonParams.INFO_HANDLER_PATH;
+import static org.apache.solr.common.params.CommonParams.METRICS_PATH;
+import static org.apache.solr.common.params.CommonParams.ZK_PATH;
+import static org.apache.solr.security.AuthenticationPlugin.AUTHENTICATION_PLUGIN_PROP;
+
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.nio.file.Path;
@@ -76,6 +88,7 @@ import org.apache.solr.handler.admin.AutoscalingHistoryHandler;
 import org.apache.solr.handler.admin.CollectionsHandler;
 import org.apache.solr.handler.admin.ConfigSetsHandler;
 import org.apache.solr.handler.admin.CoreAdminHandler;
+import org.apache.solr.handler.admin.HealthCheckHandler;
 import org.apache.solr.handler.admin.InfoHandler;
 import org.apache.solr.handler.admin.MetricsCollectorHandler;
 import org.apache.solr.handler.admin.MetricsHandler;
@@ -148,6 +161,7 @@ public class CoreContainer {
 
   protected CoreAdminHandler coreAdminHandler = null;
   protected CollectionsHandler collectionsHandler = null;
+  protected HealthCheckHandler healthCheckHandler = null;
 
   private InfoHandler infoHandler;
   protected ConfigSetsHandler configSetsHandler = null;
@@ -565,6 +579,7 @@ public class CoreContainer {
     createHandler(ZK_PATH, ZookeeperInfoHandler.class.getName(), ZookeeperInfoHandler.class);
     createHandler(ZK_STATUS_PATH, ZookeeperStatusHandler.class.getName(), ZookeeperStatusHandler.class);
     collectionsHandler = createHandler(COLLECTIONS_HANDLER_PATH, cfg.getCollectionsHandlerClass(), CollectionsHandler.class);
+    healthCheckHandler = createHandler(HEALTH_CHECK_HANDLER_PATH, cfg.getHealthCheckHandlerClass(), HealthCheckHandler.class);
     infoHandler        = createHandler(INFO_HANDLER_PATH, cfg.getInfoHandlerClass(), InfoHandler.class);
     coreAdminHandler   = createHandler(CORES_HANDLER_PATH, cfg.getCoreAdminHandlerClass(), CoreAdminHandler.class);
     configSetsHandler = createHandler(CONFIGSETS_HANDLER_PATH, cfg.getConfigSetsHandlerClass(), ConfigSetsHandler.class);
@@ -706,7 +721,7 @@ public class CoreContainer {
     } finally {
       if (asyncSolrCoreLoad && futures != null) {
 
-        coreContainerWorkExecutor.submit((Runnable) () -> {
+        coreContainerWorkExecutor.submit(() -> {
           try {
             for (Future<SolrCore> future : futures) {
               try {
@@ -1186,7 +1201,7 @@ public class CoreContainer {
   private ConfigSet getConfigSet(CoreDescriptor cd) {
     return coreConfigService.getConfig(cd);
   }
-  
+
   /**
    * Take action when we failed to create a SolrCore. If error is due to corrupt index, try to recover. Various recovery
    * strategies can be specified via system properties "-DCoreInitFailedAction={fromleader, none}"
@@ -1660,6 +1675,8 @@ public class CoreContainer {
     return collectionsHandler;
   }
 
+  public HealthCheckHandler getHealthCheckHandler() { return healthCheckHandler; }
+
   public InfoHandler getInfoHandler() {
     return infoHandler;
   }
@@ -1820,7 +1837,7 @@ public class CoreContainer {
         getZkController().giveupLeadership(solrCore.getCoreDescriptor(), tragicException);
       }
     }
-    
+
     return tragicException != null;
   }
 
