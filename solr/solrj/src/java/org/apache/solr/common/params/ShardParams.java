@@ -66,6 +66,21 @@ public interface ShardParams {
   /** Value denoting local replicas */
   String REPLICA_LOCAL = "local";
 
+  /** Replica base/fallback sort rule */
+  String SHARDS_PREFERENCE_REPLICA_BASE = "replica.base";
+
+  /** Value denoting randomized replica sort */
+  String REPLICA_RANDOM = "random";
+
+  /** Value denoting stable replica sort */
+  String REPLICA_STABLE = "stable";
+
+  /** configure dividend param for stable replica sort */
+  String ROUTING_DIVIDEND = "dividend";
+
+  /** configure hash param for stable replica sort */
+  String ROUTING_HASH = "hash";
+
   String _ROUTE_ = "_route_";
 
   /** Force a single-pass distributed query? (true/false) */
