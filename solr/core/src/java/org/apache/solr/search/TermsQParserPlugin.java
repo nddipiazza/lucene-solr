@@ -22,6 +22,7 @@ import java.util.Arrays;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
+import org.apache.lucene.index.DocValues;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.MultiDocValues;
 import org.apache.lucene.index.PrefixCodedTerms;
@@ -164,14 +165,16 @@ public class TermsQParserPlugin extends QParserPlugin {
 
     public PostFilterDocValuesTermsQuery(String field, BytesRef... terms) {
       super(field, terms);
-
+      System.out.println("Post filter!!!");
       this.fieldName = field;
     }
 
     @Override
     public DelegatingCollector getFilterCollector(IndexSearcher searcher) {
+      System.out.println("Running the post filter!!!");
       try {
-        final SortedSetDocValues docValues = MultiDocValues.getSortedSetValues(searcher.getIndexReader(), fieldName);
+        long start = System.currentTimeMillis();
+        final SortedSetDocValues docValues = DocValues.getSortedSet(((SolrIndexSearcher)searcher).getSlowAtomicReader(), fieldName);
         final LongBitSet topLevelDocValuesBitSet = new LongBitSet(docValues.getValueCount());
         boolean matchesAtLeastOneTerm = false;
         PrefixCodedTerms.TermIterator iterator = termData.iterator();
@@ -184,6 +187,9 @@ public class TermsQParserPlugin extends QParserPlugin {
             lastOrdFound = ord;
           }
         }
+
+        long end = System.currentTimeMillis();
+        System.out.println("Lookups:"+Long.toString(end-start));
 
         if (matchesAtLeastOneTerm) {
           return new TermsCollector(fieldName, docValues, topLevelDocValuesBitSet);
@@ -279,9 +285,8 @@ public class TermsQParserPlugin extends QParserPlugin {
 
       // Advance doc values until its >= globalDoc
       final int globalDoc = doc + docBase;
-      while (currentDocValuesPosition < globalDoc) {
-        currentDocValuesPosition = topLevelDocValues.advance(globalDoc);
-      }
+
+      currentDocValuesPosition = topLevelDocValues.advance(globalDoc);
 
       if (globalDoc == currentDocValuesPosition) {
         while (true) {
@@ -294,7 +299,6 @@ public class TermsQParserPlugin extends QParserPlugin {
         }
       }
     }
-
 
   }
 }
