@@ -16,28 +16,40 @@
  */
 package org.apache.solr.search;
 
+import java.io.IOException;
+import java.lang.invoke.MethodHandles;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
+import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.index.MultiDocValues;
+import org.apache.lucene.index.PrefixCodedTerms;
+import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.AutomatonQuery;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.ConstantScoreQuery;
 import org.apache.lucene.search.DocValuesTermsQuery;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.TermInSetQuery;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
+import org.apache.lucene.util.LongBitSet;
 import org.apache.lucene.util.automaton.Automata;
 import org.apache.lucene.util.automaton.Automaton;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.schema.FieldType;
 import org.apache.solr.schema.PointField;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Finds documents whose specified field has any of the specified values. It's like
@@ -86,7 +98,7 @@ public class TermsQParserPlugin extends QParserPlugin {
     docValuesTermsFilter {//on 4x this is FieldCacheTermsFilter but we use the 5x name any way
       @Override
       Query makeFilter(String fname, BytesRef[] byteRefs) {
-        return new DocValuesTermsQuery(fname, byteRefs);//constant scores
+        return new PostFilterDocValuesTermsQuery(fname, byteRefs);//constant scores
       }
     };
 
@@ -139,5 +151,150 @@ public class TermsQParserPlugin extends QParserPlugin {
         return method.makeFilter(fname, bytesRefs);
       }
     };
+  }
+
+  private static class PostFilterDocValuesTermsQuery extends DocValuesTermsQuery implements PostFilter {
+    private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+
+    private String fieldName;
+    private boolean cache = true;
+    private boolean cacheSeparately = false;
+    private int cost;
+
+
+    public PostFilterDocValuesTermsQuery(String field, BytesRef... terms) {
+      super(field, terms);
+
+      this.fieldName = field;
+    }
+
+    @Override
+    public DelegatingCollector getFilterCollector(IndexSearcher searcher) {
+      try {
+        final SortedSetDocValues docValues = MultiDocValues.getSortedSetValues(searcher.getIndexReader(), fieldName);
+        final LongBitSet topLevelDocValuesBitSet = new LongBitSet(docValues.getValueCount());
+        boolean matchesAtLeastOneTerm = false;
+        PrefixCodedTerms.TermIterator iterator = termData.iterator();
+        long lastOrdFound = 0;
+        for (BytesRef term = iterator.next(); term != null; term = iterator.next()) {
+          final long ord = lookupTerm(docValues, term, lastOrdFound);
+          if (ord >= 0) {
+            matchesAtLeastOneTerm = true;
+            topLevelDocValuesBitSet.set(ord);
+            lastOrdFound = ord;
+          }
+        }
+
+        if (matchesAtLeastOneTerm) {
+          return new TermsCollector(fieldName, docValues, topLevelDocValuesBitSet);
+        } else {
+          return new TermsCollector(fieldName, docValues, null);
+        }
+      } catch (IOException e) {
+        throw new RuntimeException(e);
+      }
+    }
+
+    /*
+     * Same binary-search based implementation as SortedSetDocValues.lookupTerm(BytesRef), but with an
+     * optimization to narrow the search space where possible by providing a startOrd instead of begining each search
+     * at 0.
+     */
+    private long lookupTerm(SortedSetDocValues docValues, BytesRef key, long startOrd) throws IOException {
+      long low = startOrd;
+      long high = docValues.getValueCount()-1;
+
+      while (low <= high) {
+        long mid = (low + high) >>> 1;
+        final BytesRef term = docValues.lookupOrd(mid);
+        int cmp = term.compareTo(key);
+
+        if (cmp < 0) {
+          low = mid + 1;
+        } else if (cmp > 0) {
+          high = mid - 1;
+        } else {
+          return mid; // key found
+        }
+      }
+
+      return -(low + 1);  // key not found.
+    }
+
+    @Override
+    public void setCache(boolean cache) { this.cache = cache; }
+
+    @Override
+    public boolean getCache() {
+      return (getCost() > 99) ? false : cache;
+    }
+
+    @Override
+    public int getCost() { return cost; }
+
+    @Override
+    public void setCost(int cost) { this.cost = cost; }
+
+    @Override
+    public boolean getCacheSep() { return cacheSeparately; }
+
+    @Override
+    public void setCacheSep(boolean cacheSep) { this.cacheSeparately = cacheSep; }
+  }
+
+  private static class TermsCollector extends DelegatingCollector {
+    private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+
+    private int docBase;
+    private int currentDocValuesPosition = -1;
+    private SortedSetDocValues topLevelDocValues;
+    private LongBitSet topLevelDocValueBitSet;
+
+    /**
+     *
+     * @param fieldName the name of the field collected over
+     * @param topLevelDocValues a top-level DocValues object
+     * @param topLevelDocValueBitSet a doc-values bitset where only ordinals matching terms in the query are set
+     */
+    public TermsCollector(String fieldName, SortedSetDocValues topLevelDocValues, LongBitSet topLevelDocValueBitSet) {
+      super();
+
+      this.topLevelDocValues = topLevelDocValues;
+      this.topLevelDocValueBitSet = topLevelDocValueBitSet;
+    }
+
+    private LeafCollector leafCollector;
+
+    public void setScorer(Scorable scorer) throws IOException {
+      leafCollector.setScorer(scorer);
+    }
+
+    public void doSetNextReader(LeafReaderContext context) throws IOException {
+      this.leafCollector = delegate.getLeafCollector(context);
+      this.docBase = context.docBase;
+    }
+
+    public void collect(int doc) throws IOException {
+      if (topLevelDocValueBitSet == null) return; // Collect nothing if no terms matched doc-values entries
+
+      // Advance doc values until its >= globalDoc
+      final int globalDoc = doc + docBase;
+      while (currentDocValuesPosition < globalDoc) {
+        currentDocValuesPosition = topLevelDocValues.advance(globalDoc);
+      }
+
+      if (globalDoc == currentDocValuesPosition) {
+        while (true) {
+          final long ord = topLevelDocValues.nextOrd();
+          if (ord == SortedSetDocValues.NO_MORE_ORDS) break;
+          if (topLevelDocValueBitSet.get(ord)) {
+            leafCollector.collect(doc);
+            break;
+          }
+        }
+      }
+    }
+
+
   }
 }

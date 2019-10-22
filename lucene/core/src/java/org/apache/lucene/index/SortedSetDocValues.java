@@ -31,7 +31,7 @@ import org.apache.lucene.util.automaton.CompiledAutomaton;
  * are dense and in increasing sorted order.
  */
 public abstract class SortedSetDocValues extends DocValuesIterator {
-  
+
   /** Sole constructor. (For invocation by subclass 
    * constructors, typically implicit.) */
   protected SortedSetDocValues() {}

@@ -94,7 +94,7 @@ import org.apache.lucene.util.LongBitSet;
 public class DocValuesTermsQuery extends Query {
 
   private final String field;
-  private final PrefixCodedTerms termData;
+  protected final PrefixCodedTerms termData;
   private final int termDataHashCode; // cached hashcode of termData
 
   public DocValuesTermsQuery(String field, Collection<BytesRef> terms) {
