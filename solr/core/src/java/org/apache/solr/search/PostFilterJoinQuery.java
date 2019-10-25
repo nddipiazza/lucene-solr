@@ -71,6 +71,8 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
 
       final SortedSetDocValues fromValues = DocValues.getSortedSet(fromSearcher.getSlowAtomicReader(), fromField);
       final SortedSetDocValues toValues = DocValues.getSortedSet(toSearcher.getSlowAtomicReader(), toField);
+      ensureDocValuesAreNonEmpty(fromValues, fromField, "from");
+      ensureDocValuesAreNonEmpty(toValues, toField, "to");
       final LongBitSet fromOrdBitSet = new LongBitSet(fromValues.getValueCount());
       final LongBitSet toOrdBitSet = new LongBitSet(toValues.getValueCount());
 
@@ -121,8 +123,7 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
   public void setCacheSep(boolean cacheSep) {
     this.cacheSep = cacheSep;
   }
-
-
+  
   private void ensureJoinFieldExistsAndHasDocValues(SolrIndexSearcher solrSearcher, String fieldName, String querySide) {
     final IndexSchema schema = solrSearcher.getSchema();
     final SchemaField field = schema.getFieldOrNull(fieldName);
@@ -134,6 +135,12 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
       throw new SolrException(SolrException.ErrorCode.BAD_REQUEST,
           "Postfilter join queries require 'to' and 'from' fields to have docvalues enabled: '" +
               querySide + "' field '" + fieldName + "' doesn't");
+    }
+  }
+
+  private void ensureDocValuesAreNonEmpty(SortedSetDocValues docValues, String fieldName, String type) {
+    if (docValues.getValueCount() == 0) {
+      throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, "'" + type + "' field " + fieldName+ " has no docvalues");
     }
   }
 
