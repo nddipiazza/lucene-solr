@@ -18,6 +18,7 @@ package org.apache.solr.search;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.lang.invoke.MethodHandles;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -58,9 +59,15 @@ import org.apache.solr.search.join.GraphPointsCollector;
 import org.apache.solr.search.join.ScoreJoinQParserPlugin;
 import org.apache.solr.util.RTimer;
 import org.apache.solr.util.RefCounted;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class JoinQParserPlugin extends QParserPlugin {
+  private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+
   public static final String NAME = "join";
+  public static final String COST = "cost";
+  public static final String CACHE = "cache";
 
   @Override
   public QParser createParser(String qstr, SolrParams localParams, SolrParams params, SolrQueryRequest req) {
@@ -70,9 +77,15 @@ public class JoinQParserPlugin extends QParserPlugin {
       public Query parse() throws SyntaxError {
         if(localParams!=null && localParams.get(ScoreJoinQParserPlugin.SCORE)!=null){
           return new ScoreJoinQParserPlugin().createParser(qstr, localParams, params, req).parse();
-        }else{
+        } else {
           return parseJoin();
         }
+      }
+
+      private boolean postFilterEnabled() {
+        return localParams != null &&
+            localParams.getInt(COST) != null && localParams.getPrimitiveInt(COST) > 99 &&
+            localParams.getBool(CACHE) != null && localParams.getPrimitiveBool(CACHE) == false;
       }
       
       Query parseJoin() throws SyntaxError {
@@ -116,7 +129,9 @@ public class JoinQParserPlugin extends QParserPlugin {
           fromQuery = fromQueryParser.getQuery();
         }
 
-        JoinQuery jq = new JoinQuery(fromField, toField, coreName == null ? fromIndex : coreName, fromQuery);
+
+        final String indexToUse = coreName == null ? fromIndex : coreName;
+        final JoinQuery jq = postFilterEnabled() ? new PostFilterJoinQuery(fromField, toField, indexToUse, fromQuery) : new JoinQuery(fromField, toField, indexToUse, fromQuery);
         jq.fromCoreOpenTime = fromCoreOpenTime;
         return jq;
       }
@@ -138,6 +153,8 @@ public class JoinQParserPlugin extends QParserPlugin {
 
 
 class JoinQuery extends Query {
+  private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+
   String fromField;
   String toField;
   String fromIndex; // TODO: name is missleading here compared to JoinQParserPlugin usage - here it must be a core name
