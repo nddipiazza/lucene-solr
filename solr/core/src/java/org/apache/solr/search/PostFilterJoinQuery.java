@@ -80,15 +80,25 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
       fromSearcher.search(q, collector);
 
       long fromOrdinal = 0;
-      while ((fromOrdinal = fromOrdBitSet.nextSetBit(fromOrdinal)) > 0) {
+      long firstToOrd = -1;
+      long lastToOrd = 0;
+      boolean matchesAtLeastOneTerm = false;
+      while ((fromOrdinal = fromOrdBitSet.nextSetBit(fromOrdinal)) >= 0) {
         final BytesRef fromBytesRef = fromValues.lookupOrd(fromOrdinal);
-        final long toOrdinal = toValues.lookupTerm(fromBytesRef);
+        final long toOrdinal = lookupTerm(toValues, fromBytesRef, lastToOrd);//toValues.lookupTerm(fromBytesRef);
         if (toOrdinal >= 0) {
           toOrdBitSet.set(toOrdinal);
+          if (firstToOrd == -1) firstToOrd = toOrdinal;
+          lastToOrd = toOrdinal;
+          matchesAtLeastOneTerm = true;
         }
         fromOrdinal++;
       }
-      return new JoinQueryCollector(toValues, toOrdBitSet);
+      if (matchesAtLeastOneTerm) {
+        return new JoinQueryCollector(toValues, toOrdBitSet, firstToOrd, lastToOrd);
+      } else {
+        return new NoMatchesCollector();
+      }
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
@@ -123,7 +133,7 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
   public void setCacheSep(boolean cacheSep) {
     this.cacheSep = cacheSep;
   }
-  
+
   private void ensureJoinFieldExistsAndHasDocValues(SolrIndexSearcher solrSearcher, String fieldName, String querySide) {
     final IndexSchema schema = solrSearcher.getSchema();
     final SchemaField field = schema.getFieldOrNull(fieldName);
@@ -201,6 +211,32 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
     this.toSearcher = searcher;
   }
 
+  /*
+   * Same binary-search based implementation as SortedSetDocValues.lookupTerm(BytesRef), but with an
+   * optimization to narrow the search space where possible by providing a startOrd instead of begining each search
+   * at 0.
+   */
+  private long lookupTerm(SortedSetDocValues docValues, BytesRef key, long startOrd) throws IOException {
+    long low = startOrd;
+    long high = docValues.getValueCount()-1;
+
+    while (low <= high) {
+      long mid = (low + high) >>> 1;
+      final BytesRef term = docValues.lookupOrd(mid);
+      int cmp = term.compareTo(key);
+
+      if (cmp < 0) {
+        low = mid + 1;
+      } else if (cmp > 0) {
+        high = mid - 1;
+      } else {
+        return mid; // key found
+      }
+    }
+
+    return -(low + 1);  // key not found.
+  }
+
   private static class TermOrdinalCollector extends DelegatingCollector {
     private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
@@ -243,10 +279,14 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
     private int docBase;
     private SortedSetDocValues topLevelDocValues;
     private LongBitSet topLevelDocValuesBitSet;
+    private long firstOrd;
+    private long lastOrd;
 
-    public JoinQueryCollector(SortedSetDocValues topLevelDocValues, LongBitSet topLevelDocValuesBitSet) {
+    public JoinQueryCollector(SortedSetDocValues topLevelDocValues, LongBitSet topLevelDocValuesBitSet, long firstOrd, long lastOrd) {
       this.topLevelDocValues = topLevelDocValues;
       this.topLevelDocValuesBitSet = topLevelDocValuesBitSet;
+      this.firstOrd = firstOrd;
+      this.lastOrd = lastOrd;
     }
 
     @Override
@@ -268,6 +308,8 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
         while (true) {
           final long ord = topLevelDocValues.nextOrd();
           if (ord == SortedSetDocValues.NO_MORE_ORDS) break;
+          if (ord > lastOrd) break;
+          if (ord < firstOrd) continue;
           if (topLevelDocValuesBitSet.get(ord)) {
             leafCollector.collect(doc);
             break;
@@ -275,5 +317,10 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
         }
       }
     }
+  }
+
+  private static class NoMatchesCollector extends DelegatingCollector {
+    @Override
+    public void collect(int doc) throws IOException {}
   }
 }
