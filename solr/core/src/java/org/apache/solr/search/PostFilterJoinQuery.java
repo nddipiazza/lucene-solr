@@ -31,8 +31,7 @@ import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.Query;
-import org.apache.lucene.search.Scorable;
-import org.apache.lucene.search.ScoreMode;
+import org.apache.lucene.search.Scorer;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.LongBitSet;
 import org.apache.solr.common.SolrException;
@@ -257,9 +256,14 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
       this.topLevelDocValuesBitSet = topLevelDocValuesBitSet;
     }
 
-    @Override
+    /*
     public ScoreMode scoreMode() {
       return ScoreMode.COMPLETE_NO_SCORES;
+    }
+    */
+
+    public boolean needsScores(){
+      return false;
     }
 
     @Override
@@ -294,7 +298,7 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
     }
 
     @Override
-    public void setScorer(Scorable scorer) throws IOException {
+    public void setScorer(Scorer scorer) throws IOException {
       leafCollector.setScorer(scorer);
     }
 
