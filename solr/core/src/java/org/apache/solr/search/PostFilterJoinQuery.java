@@ -26,6 +26,7 @@ import java.util.List;
 import org.apache.lucene.index.DocValues;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.SortedSetDocValues;
+import org.apache.lucene.index.SortedDocValues;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.LeafCollector;
@@ -69,10 +70,10 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
       ensureJoinFieldExistsAndHasDocValues(fromSearcher, fromField, "from");
       ensureJoinFieldExistsAndHasDocValues(toSearcher, toField, "to");
 
-      final SortedSetDocValues fromValues = DocValues.getSortedSet(fromSearcher.getSlowAtomicReader(), fromField);
+      final SortedDocValues fromValues = DocValues.getSorted(fromSearcher.getSlowAtomicReader(), fromField);
       final SortedSetDocValues toValues = DocValues.getSortedSet(toSearcher.getSlowAtomicReader(), toField);
       ensureDocValuesAreNonEmpty(fromValues, fromField, "from");
-      ensureDocValuesAreNonEmpty(toValues, toField, "to");
+      //ensureDocValuesAreNonEmpty(toValues, toField, "to");
       final LongBitSet fromOrdBitSet = new LongBitSet(fromValues.getValueCount());
       final LongBitSet toOrdBitSet = new LongBitSet(toValues.getValueCount());
 
@@ -83,8 +84,11 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
       long firstToOrd = -1;
       long lastToOrd = 0;
       boolean matchesAtLeastOneTerm = false;
+      long start = System.currentTimeMillis();
+      int count = 0;
       while ((fromOrdinal = fromOrdBitSet.nextSetBit(fromOrdinal)) >= 0) {
-        final BytesRef fromBytesRef = fromValues.lookupOrd(fromOrdinal);
+        ++count;
+        final BytesRef fromBytesRef = fromValues.lookupOrd((int)fromOrdinal);
         final long toOrdinal = lookupTerm(toValues, fromBytesRef, lastToOrd);//toValues.lookupTerm(fromBytesRef);
         if (toOrdinal >= 0) {
           toOrdBitSet.set(toOrdinal);
@@ -94,6 +98,8 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
         }
         fromOrdinal++;
       }
+      long end = System.currentTimeMillis();
+      System.out.println("Time:"+Long.toString(end-start)+":"+count);
       if (matchesAtLeastOneTerm) {
         return new JoinQueryCollector(toValues, toOrdBitSet, firstToOrd, lastToOrd);
       } else {
@@ -148,7 +154,7 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
     }
   }
 
-  private void ensureDocValuesAreNonEmpty(SortedSetDocValues docValues, String fieldName, String type) {
+  private void ensureDocValuesAreNonEmpty(SortedDocValues docValues, String fieldName, String type) {
     if (docValues.getValueCount() == 0) {
       throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, "'" + type + "' field " + fieldName+ " has no docvalues");
     }
@@ -241,11 +247,11 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
     private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
     private int docBase;
-    private SortedSetDocValues topLevelDocValues;
+    private SortedDocValues topLevelDocValues;
     private final String fieldName;
     private final LongBitSet topLevelDocValuesBitSet;
 
-    public TermOrdinalCollector(String fieldName, SortedSetDocValues topLevelDocValues, LongBitSet topLevelDocValuesBitSet) {
+    public TermOrdinalCollector(String fieldName, SortedDocValues topLevelDocValues, LongBitSet topLevelDocValuesBitSet) {
       this.fieldName = fieldName;
       this.topLevelDocValues = topLevelDocValues;
       this.topLevelDocValuesBitSet = topLevelDocValuesBitSet;
@@ -267,9 +273,7 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
 
       if (topLevelDocValues.advanceExact(globalDoc)) { // TODO The use of advanceExact assumes collect() is called in increasing docId order.  Is that true?
         long fieldValueOrd;
-        while (SortedSetDocValues.NO_MORE_ORDS != (fieldValueOrd = topLevelDocValues.nextOrd())) {
-          topLevelDocValuesBitSet.set(fieldValueOrd);
-        }
+        topLevelDocValuesBitSet.set(topLevelDocValues.ordValue());
       }
     }
   }
