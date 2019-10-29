@@ -20,14 +20,10 @@ package org.apache.solr.search;
 import java.io.Closeable;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
-import java.util.ArrayList;
-import java.util.List;
-
 import org.apache.lucene.index.DocValues;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.index.SortedDocValues;
-import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.Query;
@@ -62,7 +58,7 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
 
   @Override
   public DelegatingCollector getFilterCollector(IndexSearcher searcher) {
-    log.info("Running join query using postfilter");
+    log.debug("Running join query using postfilter");
     final SolrIndexSearcher solrSearcher = (SolrIndexSearcher) searcher;
     try {
       initializeSearchers(solrSearcher);
@@ -72,7 +68,7 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
       final SortedDocValues fromValues = DocValues.getSorted(fromSearcher.getSlowAtomicReader(), fromField);
       final SortedSetDocValues toValues = DocValues.getSortedSet(toSearcher.getSlowAtomicReader(), toField);
       ensureDocValuesAreNonEmpty(fromValues, fromField, "from");
-      //ensureDocValuesAreNonEmpty(toValues, toField, "to");
+      ensureDocValuesAreNonEmpty(toValues, toField, "to");
       final LongBitSet fromOrdBitSet = new LongBitSet(fromValues.getValueCount());
       final LongBitSet toOrdBitSet = new LongBitSet(toValues.getValueCount());
 
@@ -98,7 +94,7 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
         fromOrdinal++;
       }
       long end = System.currentTimeMillis();
-      System.out.println("Time:"+Long.toString(end-start)+":"+count);
+      log.debug("Built the join filter in "+Long.toString(end-start)+" millis, filter term count is "+count);
       if (matchesAtLeastOneTerm) {
         return new JoinQueryCollector(toValues, toOrdBitSet, firstToOrd, lastToOrd);
       } else {
@@ -146,7 +142,7 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
       throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, querySide + " field '" + fieldName + "' does not exist");
     }
 
-    if (! field.hasDocValues()) {
+    if (!field.hasDocValues()) {
       throw new SolrException(SolrException.ErrorCode.BAD_REQUEST,
           "Postfilter join queries require 'to' and 'from' fields to have docvalues enabled: '" +
               querySide + "' field '" + fieldName + "' doesn't");
@@ -154,6 +150,12 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
   }
 
   private void ensureDocValuesAreNonEmpty(SortedDocValues docValues, String fieldName, String type) {
+    if (docValues.getValueCount() == 0) {
+      throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, "'" + type + "' field " + fieldName+ " has no docvalues");
+    }
+  }
+
+  private void ensureDocValuesAreNonEmpty(SortedSetDocValues docValues, String fieldName, String type) {
     if (docValues.getValueCount() == 0) {
       throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, "'" + type + "' field " + fieldName+ " has no docvalues");
     }
@@ -218,7 +220,7 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
 
   /*
    * Same binary-search based implementation as SortedSetDocValues.lookupTerm(BytesRef), but with an
-   * optimization to narrow the search space where possible by providing a startOrd instead of begining each search
+   * optimization to narrow the search space where possible by providing a startOrd instead of beginning each search
    * at 0.
    */
   private long lookupTerm(SortedSetDocValues docValues, BytesRef key, long startOrd) throws IOException {
@@ -276,7 +278,6 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
       final int globalDoc = docBase + doc;
 
       if (topLevelDocValues.advanceExact(globalDoc)) { // TODO The use of advanceExact assumes collect() is called in increasing docId order.  Is that true?
-        long fieldValueOrd;
         topLevelDocValuesBitSet.set(topLevelDocValues.ordValue());
       }
     }
