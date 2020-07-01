@@ -571,7 +571,7 @@ public class HttpShardHandlerFactory extends ShardHandlerFactory implements org.
 
   protected ReplicaListTransformer getReplicaListTransformer(final SolrQueryRequest req) {
     final SolrParams params = req.getParams();
-    log.info("Getting replica list transformer for solr query request: {}", req);
+    //log.info("Getting replica list transformer for solr query request: {}", req);
     @SuppressWarnings("deprecation")
     final boolean preferLocalShards = params.getBool(CommonParams.PREFER_LOCAL_SHARDS, false);
     final String shardsPreferenceSpec = params.get(ShardParams.SHARDS_PREFERENCE, "");
@@ -592,17 +592,17 @@ public class HttpShardHandlerFactory extends ShardHandlerFactory implements org.
       ReplicaListTransformer baseReplicaListTransformer = replicaComp.getBaseReplicaListTransformer();
       if (replicaComp.sortRules == null) {
         // only applying base transformation
-        log.info("Return base replica list transformer: {}", baseReplicaListTransformer);
+        //log.info("Return base replica list transformer: {}", baseReplicaListTransformer);
         return baseReplicaListTransformer;
       } else {
         ReplicaListTransformer res = new TopLevelReplicaListTransformer(replicaComp, baseReplicaListTransformer);
-        log.info("Return new top level replica list transformer replica list transformer: {}", res);
+        //log.info("Return new top level replica list transformer replica list transformer: {}", res);
         return res;
       }
     }
 
     ReplicaListTransformer res = defaultRltFactory.getInstance(null, req, randomRltFactory);
-    log.info("Return default RLT factory: {}", res);
+    //log.info("Return default RLT factory: {}", res);
     return res;
   }
 

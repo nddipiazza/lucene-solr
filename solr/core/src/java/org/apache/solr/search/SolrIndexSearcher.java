@@ -2272,11 +2272,12 @@ public class SolrIndexSearcher extends IndexSearcher implements Closeable, SolrI
   public void initializeMetrics(SolrMetricManager manager, String registry, String tag, String scope) {
     this.registryName = registry;
     this.metricManager = manager;
-    manager.registerGauge(this, registry, () -> name, tag, true, "searcherName", Category.SEARCHER.toString(), scope);
-    manager.registerGauge(this, registry, () -> cachingEnabled, tag, true, "caching", Category.SEARCHER.toString(), scope);
-    manager.registerGauge(this, registry, () -> openTime, tag, true, "openedAt", Category.SEARCHER.toString(), scope);
-    manager.registerGauge(this, registry, () -> warmupTime, tag, true, "warmupTime", Category.SEARCHER.toString(), scope);
-    manager.registerGauge(this, registry, () -> registerTime, tag, true, "registeredAt", Category.SEARCHER.toString(), scope);
+    // disable these metrics due to SOLR-13677
+//    manager.registerGauge(this, registry, () -> name, tag, true, "searcherName", Category.SEARCHER.toString(), scope);
+//    manager.registerGauge(this, registry, () -> cachingEnabled, tag, true, "caching", Category.SEARCHER.toString(), scope);
+//    manager.registerGauge(this, registry, () -> openTime, tag, true, "openedAt", Category.SEARCHER.toString(), scope);
+//    manager.registerGauge(this, registry, () -> warmupTime, tag, true, "warmupTime", Category.SEARCHER.toString(), scope);
+//    manager.registerGauge(this, registry, () -> registerTime, tag, true, "registeredAt", Category.SEARCHER.toString(), scope);
     // reader stats
     manager.registerGauge(this, registry, () -> reader.numDocs(), tag, true, "numDocs", Category.SEARCHER.toString(), scope);
     manager.registerGauge(this, registry, () -> reader.maxDoc(), tag, true, "maxDoc", Category.SEARCHER.toString(), scope);
