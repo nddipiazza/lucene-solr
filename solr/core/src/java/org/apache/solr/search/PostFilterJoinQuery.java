@@ -20,10 +20,11 @@ package org.apache.solr.search;
 import java.io.Closeable;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
+
 import org.apache.lucene.index.DocValues;
 import org.apache.lucene.index.LeafReaderContext;
-import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.index.SortedDocValues;
+import org.apache.lucene.index.SortedSetDocValues;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.Query;
@@ -65,51 +66,36 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
       ensureJoinFieldExistsAndHasDocValues(fromSearcher, fromField, "from");
       ensureJoinFieldExistsAndHasDocValues(toSearcher, toField, "to");
 
-      final boolean isSameCoreSameField = fromSearcher.equals(toSearcher) && fromField.equals(toField);
-
       final SortedDocValues fromValues = DocValues.getSorted(fromSearcher.getSlowAtomicReader(), fromField);
       final SortedSetDocValues toValues = DocValues.getSortedSet(toSearcher.getSlowAtomicReader(), toField);
       ensureDocValuesAreNonEmpty(fromValues, fromField, "from");
       ensureDocValuesAreNonEmpty(toValues, toField, "to");
       final LongBitSet fromOrdBitSet = new LongBitSet(fromValues.getValueCount());
+      final LongBitSet toOrdBitSet = new LongBitSet(toValues.getValueCount());
 
       final TermOrdinalCollector collector = new TermOrdinalCollector(fromField, fromValues, fromOrdBitSet);
-
-      // runs a search using the from field
       fromSearcher.search(q, collector);
 
-      // goes through each result of the "from" result and converts it to a compatible "to" ordinal.
-      final LongBitSet toOrdBitSet;
-      boolean matchesAtLeastOneTerm = false;
+      long fromOrdinal = 0;
       long firstToOrd = -1;
       long lastToOrd = 0;
-      if (!isSameCoreSameField) {
-        toOrdBitSet = new LongBitSet(toValues.getValueCount());
-        long fromOrdinal = 0;
-        long start = System.currentTimeMillis();
-        int count = 0;
-        while ((fromOrdinal = fromOrdBitSet.nextSetBit(fromOrdinal)) >= 0) {
-          ++count;
-          final BytesRef fromBytesRef = fromValues.lookupOrd((int)fromOrdinal);
-          final long toOrdinal = lookupTerm(toValues, fromBytesRef, lastToOrd);//toValues.lookupTerm(fromBytesRef);
-          if (toOrdinal >= 0) {
-            toOrdBitSet.set(toOrdinal);
-            if (firstToOrd == -1) firstToOrd = toOrdinal;
-            lastToOrd = toOrdinal;
-            matchesAtLeastOneTerm = true;
-          }
-          fromOrdinal++;
+      boolean matchesAtLeastOneTerm = false;
+      long start = System.currentTimeMillis();
+      int count = 0;
+      while ((fromOrdinal = fromOrdBitSet.nextSetBit(fromOrdinal)) >= 0) {
+        ++count;
+        final BytesRef fromBytesRef = fromValues.lookupOrd((int)fromOrdinal);
+        final long toOrdinal = lookupTerm(toValues, fromBytesRef, lastToOrd);//toValues.lookupTerm(fromBytesRef);
+        if (toOrdinal >= 0) {
+          toOrdBitSet.set(toOrdinal);
+          if (firstToOrd == -1) firstToOrd = toOrdinal;
+          lastToOrd = toOrdinal;
+          matchesAtLeastOneTerm = true;
         }
-        long end = System.currentTimeMillis();
-        log.debug("Built the join filter in "+Long.toString(end-start)+" millis, filter term count is "+count);
-      } else {
-        matchesAtLeastOneTerm = true;
-        toOrdBitSet = fromOrdBitSet;
-        firstToOrd = collector.minOrdinal;
-        lastToOrd = collector.maxOrdinal;
+        fromOrdinal++;
       }
-
-      // at this point, now the toOrdBitSet is set and ready to go
+      long end = System.currentTimeMillis();
+      log.debug("Built the join filter in "+Long.toString(end-start)+" millis, filter term count is "+count);
       if (matchesAtLeastOneTerm) {
         return new JoinQueryCollector(toValues, toOrdBitSet, firstToOrd, lastToOrd);
       } else {
@@ -266,8 +252,6 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
     private SortedDocValues topLevelDocValues;
     private final String fieldName;
     private final LongBitSet topLevelDocValuesBitSet;
-    private long minOrdinal = Long.MAX_VALUE;
-    private long maxOrdinal = Long.MIN_VALUE;
 
     public TermOrdinalCollector(String fieldName, SortedDocValues topLevelDocValues, LongBitSet topLevelDocValuesBitSet) {
       this.fieldName = fieldName;
@@ -285,14 +269,6 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
       return false;
     }
 
-    public long getMinOrdinal() {
-      return minOrdinal;
-    }
-
-    public long getMaxOrdinal() {
-      return maxOrdinal;
-    }
-
     @Override
     public void doSetNextReader(LeafReaderContext context) throws IOException {
       this.docBase = context.docBase;
@@ -303,13 +279,6 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
       final int globalDoc = docBase + doc;
 
       if (topLevelDocValues.advanceExact(globalDoc)) { // TODO The use of advanceExact assumes collect() is called in increasing docId order.  Is that true?
-        if (topLevelDocValues.ordValue() < minOrdinal) {
-          minOrdinal = topLevelDocValues.ordValue();
-        }
-        if (topLevelDocValues.ordValue() > maxOrdinal) {
-          maxOrdinal = topLevelDocValues.ordValue();
-        }
-
         topLevelDocValuesBitSet.set(topLevelDocValues.ordValue());
       }
     }
@@ -349,8 +318,8 @@ public class PostFilterJoinQuery extends JoinQuery implements PostFilter {
         while (true) {
           final long ord = topLevelDocValues.nextOrd();
           if (ord == SortedSetDocValues.NO_MORE_ORDS) break;
-          if (lastOrd != -1 && ord > lastOrd) break;
-          if (firstOrd != -1 || ord < firstOrd) continue;
+          if (ord > lastOrd) break;
+          if (ord < firstOrd) continue;
           if (topLevelDocValuesBitSet.get(ord)) {
             leafCollector.collect(doc);
             break;

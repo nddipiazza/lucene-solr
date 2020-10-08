@@ -84,8 +84,14 @@ public class JoinQParserPlugin extends QParserPlugin {
 
       private boolean postFilterEnabled() {
         return localParams != null &&
-            localParams.getInt(COST) != null && localParams.getPrimitiveInt(COST) > 99 &&
-            localParams.getBool(CACHE) != null && localParams.getPrimitiveBool(CACHE) == false;
+            localParams.getInt(COST) != null && localParams.getPrimitiveInt(COST) == 100 &&
+            localParams.getBool(CACHE) != null && !localParams.getPrimitiveBool(CACHE);
+      }
+
+      private boolean topLevelJoinEnabled() {
+        return localParams != null &&
+            localParams.getInt(COST) != null && localParams.getPrimitiveInt(COST) == 101 &&
+            localParams.getBool(CACHE) != null && !localParams.getPrimitiveBool(CACHE);
       }
       
       Query parseJoin() throws SyntaxError {
@@ -131,7 +137,14 @@ public class JoinQParserPlugin extends QParserPlugin {
 
 
         final String indexToUse = coreName == null ? fromIndex : coreName;
-        final JoinQuery jq = postFilterEnabled() ? new PostFilterJoinQuery(fromField, toField, indexToUse, fromQuery) : new JoinQuery(fromField, toField, indexToUse, fromQuery);
+        final JoinQuery jq;
+        if (postFilterEnabled()) {
+          jq = new PostFilterJoinQuery(fromField, toField, indexToUse, fromQuery);
+        } else if (topLevelJoinEnabled()) {
+          jq = new TopLevelJoinQuery(fromField, toField, indexToUse, fromQuery);
+        } else {
+          jq = new JoinQuery(fromField, toField, indexToUse, fromQuery);
+        }
         jq.fromCoreOpenTime = fromCoreOpenTime;
         return jq;
       }
@@ -186,7 +199,7 @@ class JoinQuery extends Query {
     return new JoinQueryWeight((SolrIndexSearcher)searcher, boost);
   }
 
-  private class JoinQueryWeight extends ConstantScoreWeight {
+  protected class JoinQueryWeight extends ConstantScoreWeight {
     SolrIndexSearcher fromSearcher;
     RefCounted<SolrIndexSearcher> fromRef;
     SolrIndexSearcher toSearcher;
