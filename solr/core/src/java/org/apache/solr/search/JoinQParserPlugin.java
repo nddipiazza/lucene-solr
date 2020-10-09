@@ -90,7 +90,12 @@ public class JoinQParserPlugin extends QParserPlugin {
 
       private boolean topLevelJoinEnabled() {
         return localParams != null &&
-            localParams.getInt(COST) != null && localParams.getPrimitiveInt(COST) == 101 &&
+            localParams.getInt(COST) != null && localParams.getPrimitiveInt(COST) == 101;
+      }
+
+      private boolean localPostFilterEnabled() {
+        return localParams != null &&
+            localParams.getInt(COST) != null && localParams.getPrimitiveInt(COST) == 102 &&
             localParams.getBool(CACHE) != null && !localParams.getPrimitiveBool(CACHE);
       }
       
@@ -142,6 +147,8 @@ public class JoinQParserPlugin extends QParserPlugin {
           jq = new PostFilterJoinQuery(fromField, toField, indexToUse, fromQuery);
         } else if (topLevelJoinEnabled()) {
           jq = new TopLevelJoinQuery(fromField, toField, indexToUse, fromQuery);
+        } else if (localPostFilterEnabled()) {
+          jq = new PostFilterLocalJoinQuery(fromField, indexToUse, fromQuery);
         } else {
           jq = new JoinQuery(fromField, toField, indexToUse, fromQuery);
         }
